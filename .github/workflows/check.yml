@@ -1,0 +1,112 @@
+---
+name: Checks
+
+on:
+  pull_request:
+    branches: [staging]
+    paths:
+      - 'stacks/**'
+      - '.github/workflows/**'
+      - '**.md'
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      stacks: ${{ steps.filter.outputs.stacks }}
+      workflows: ${{ steps.filter.outputs.workflows }}
+      docs: ${{ steps.filter.outputs.docs }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            stacks:
+              - 'stacks/**'
+            workflows:
+              - '.github/workflows/**'
+            docs:
+              - '**.md'
+
+  select-runner:
+    uses: ./.github/workflows/select-runner.yml
+    secrets: inherit
+
+  compose-validate:
+    needs: [changes, select-runner]
+    if: ${{ needs.changes.outputs.stacks == 'true' }}
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Validate compose files
+        run: |
+          shopt -s globstar nullglob
+          failed=0
+          for f in stacks/**/compose.yaml stacks/**/docker-compose.yml; do
+            echo "Validating $f ..."
+            docker compose -f "$f" config --quiet || { echo "FAILED: $f" >&2; failed=1; }
+          done
+          exit "$failed"
+
+  hadolint:
+    needs: [changes, select-runner]
+    if: ${{ needs.changes.outputs.stacks == 'true' }}
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Lint Dockerfiles
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          recursive: true
+
+  actionlint:
+    needs: changes
+    if: ${{ needs.changes.outputs.workflows == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install actionlint
+        run: |
+          curl -sL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash | bash
+          sudo mv actionlint /usr/local/bin/
+
+      - name: Run actionlint
+        run: actionlint
+
+  vale:
+    needs: changes
+    if: ${{ needs.changes.outputs.docs == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Fetch shared vale config
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api repos/blouin-labs/.github/contents/.vale.ini \
+            --jq '.content' | base64 -d > .vale.ini
+
+      - uses: vale-cli/vale-action@v2.1.1
+        with:
+          files: "."
+          reporter: github-check
+          fail_on_error: true
+
+  all-checks:
+    needs: [compose-validate, hadolint, actionlint, vale]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: All checks passed
+        run: |
+          if [ "${{ needs.compose-validate.result }}" = "failure" ] \
+            || [ "${{ needs.hadolint.result }}" = "failure" ] \
+            || [ "${{ needs.actionlint.result }}" = "failure" ] \
+            || [ "${{ needs.vale.result }}" = "failure" ]; then
+            exit 1
+          fi

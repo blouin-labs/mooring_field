@@ -1,0 +1,10 @@
+---
+services:
+  app:
+    image: ghcr.io/hargata/lubelogger:latest
+    restart: unless-stopped
+    volumes:
+      - /mnt/synology/harbor_srv/docker/lubelog/data:/App/data
+      - /mnt/synology/harbor_srv/docker/lubelog/keys:/root/.aspnet/DataProtection-Keys
+    ports:
+      - 8080:8080

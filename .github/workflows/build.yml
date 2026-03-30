@@ -1,0 +1,74 @@
+---
+name: Build
+
+on:
+  push:
+    branches: [staging]
+    paths:
+      - 'stacks/**'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  select-runner:
+    uses: ./.github/workflows/select-runner.yml
+    secrets: inherit
+
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.scan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Discover services with Dockerfiles
+        id: scan
+        run: |
+          services=$(find stacks/ -maxdepth 2 -name 'Dockerfile' \
+            | sed 's|stacks/||; s|/Dockerfile||' \
+            | jq -R . | jq -sc .)
+          echo "matrix=${services}" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: [select-runner, discover]
+    if: ${{ needs.discover.outputs.matrix != '[]' }}
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    strategy:
+      matrix:
+        service: ${{ fromJSON(needs.discover.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute short SHA
+        id: sha
+        run: echo "short=$(echo '${{ github.sha }}' | cut -c1-7)" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push ${{ matrix.service }}
+        uses: docker/build-push-action@v6
+        with:
+          context: stacks/${{ matrix.service }}
+          push: true
+          tags: |
+            ghcr.io/blouin-labs/${{ matrix.service }}:${{ steps.sha.outputs.short }}
+            ghcr.io/blouin-labs/${{ matrix.service }}:staging
+
+      - name: Write build summary
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          | Field | Value |
+          |---|---|
+          | Service | \`${{ matrix.service }}\` |
+          | SHA tag | \`${{ steps.sha.outputs.short }}\` |
+          | Image | \`ghcr.io/blouin-labs/${{ matrix.service }}:staging\` |
+          | Commit | \`${{ github.sha }}\` |
+          | Built at | \`$(date -u)\` |
+          EOF
