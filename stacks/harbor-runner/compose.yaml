@@ -1,0 +1,41 @@
+---
+name: harbor-runner
+
+services:
+  runner:
+    build: .
+    image: ghcr.io/blouin-labs/harbor-runner:latest
+    container_name: harbor-runner
+    restart: unless-stopped
+    # DinD requires privileged mode — mitigated by userns-remap inside dockerd,
+    # resource limits, log rotation, and network isolation below.
+    privileged: true
+    environment:
+      - ACTIONS_RUNNER_INPUT_URL
+      - ACTIONS_RUNNER_INPUT_TOKEN
+      - ACTIONS_RUNNER_INPUT_NAME=${ACTIONS_RUNNER_INPUT_NAME:-harbor-srv-docker}
+      - ACTIONS_RUNNER_INPUT_LABELS=${ACTIONS_RUNNER_INPUT_LABELS:-harbor-srv-docker}
+      - GH_DEPLOY_SSH_KEY_B64
+    volumes:
+      - work:/home/runner/_work
+      - docker-data:/var/lib/docker
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+          cpus: "4.0"
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+    networks:
+      - runner-net
+
+networks:
+  runner-net:
+    driver: bridge
+
+volumes:
+  work:
+  docker-data:
