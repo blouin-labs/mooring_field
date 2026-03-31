@@ -1,4 +1,5 @@
 ---
+# Checks — CI gate for PRs targeting staging.
 name: Checks
 
 on:
