@@ -1,4 +1,5 @@
 ---
+# harbor-runner — DinD GitHub Actions runner for harbor-srv-docker label.
 name: harbor-runner
 
 services:
