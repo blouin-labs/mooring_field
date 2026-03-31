@@ -85,7 +85,7 @@ jobs:
               done
 
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, wsl-docker-runner]
     needs: promote
     # Runs for promote-and-deploy (after promote succeeds) and deploy (promote skipped).
     if: |
