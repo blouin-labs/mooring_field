@@ -84,14 +84,18 @@ jobs:
                 docker push "ghcr.io/blouin-labs/${service}:latest"
               done
 
+  runner:
+    uses: ./.github/workflows/select-runner.yml
+
   deploy:
-    runs-on: ubuntu-latest
-    needs: promote
+    runs-on: ${{ fromJson(needs.runner.outputs.runner) }}
+    needs: [promote, runner]
     # Runs for promote-and-deploy (after promote succeeds) and deploy (promote skipped).
     if: |
       always() &&
       (inputs.action == 'promote-and-deploy' || inputs.action == 'deploy') &&
-      (needs.promote.result == 'success' || needs.promote.result == 'skipped')
+      (needs.promote.result == 'success' || needs.promote.result == 'skipped') &&
+      needs.runner.result == 'success'
     steps:
       - name: Require confirmation
         run: |
