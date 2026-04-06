@@ -38,14 +38,15 @@ jobs:
     needs: [changes, select-runner]
     if: ${{ needs.changes.outputs.stacks == 'true' }}
     runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    container:
+      image: docker:cli
     steps:
       - uses: actions/checkout@v5
 
       - name: Validate compose files
         run: |
-          shopt -s globstar nullglob
           failed=0
-          for f in stacks/**/compose.yaml stacks/**/docker-compose.yml; do
+          for f in $(find stacks -name 'compose.yaml' -o -name 'docker-compose.yml' | sort); do
             echo "Validating $f ..."
             docker compose -f "$f" config --quiet || { echo "FAILED: $f" >&2; failed=1; }
           done
@@ -58,7 +59,17 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Check for Dockerfiles
+        id: dockerfiles
+        run: |
+          if find stacks -name 'Dockerfile' | grep -q .; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Lint Dockerfiles
+        if: steps.dockerfiles.outputs.found == 'true'
         uses: hadolint/hadolint-action@v3.1.0
         with:
           recursive: true
