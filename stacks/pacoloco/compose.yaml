@@ -1,0 +1,11 @@
+---
+services:
+  pacoloco:
+    image: ghcr.io/anatol/pacoloco:latest
+    container_name: pacoloco
+    restart: unless-stopped
+    ports:
+      - "9129:9129"
+    volumes:
+      - /mnt/synology/harbor_srv/docker/pacoloco/pacoloco.yaml:/etc/pacoloco.yaml:ro
+      - /mnt/synology/harbor_srv/docker/pacoloco/data:/var/cache/pacoloco
