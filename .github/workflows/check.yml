@@ -56,6 +56,7 @@ jobs:
     runs-on: self-hosted
     container:
       image: hadolint/hadolint:latest-alpine
+      options: --user root
     steps:
       - uses: actions/checkout@v4
 
@@ -75,6 +76,7 @@ jobs:
     runs-on: self-hosted
     container:
       image: rhysd/actionlint:latest
+      options: --user root
     steps:
       - uses: actions/checkout@v4
 
@@ -122,7 +124,7 @@ jobs:
       - name: Scan for secrets
         # dir: scan working directory files (no git history walk needed for PRs)
         # --redact: mask secret values in output
-        run: gitleaks dir --source . --redact --exit-code 1
+        run: gitleaks dir --redact --exit-code 1 .
 
   checkov:
     needs: changes
@@ -130,6 +132,7 @@ jobs:
     runs-on: self-hosted
     container:
       image: bridgecrew/checkov:latest
+      options: --user root
     steps:
       - uses: actions/checkout@v4
 
@@ -143,6 +146,7 @@ jobs:
     runs-on: self-hosted
     container:
       image: checkmarx/kics:latest
+      options: --user root
     steps:
       - uses: actions/checkout@v4
 
