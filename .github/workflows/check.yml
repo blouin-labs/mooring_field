@@ -12,13 +12,15 @@ on:
 
 jobs:
   changes:
-    runs-on: ubuntu-latest
+    runs-on: ["self-hosted", "wsl-docker-runner"]
+    container:
+      image: alpine/git
     outputs:
       stacks: ${{ steps.filter.outputs.stacks }}
       workflows: ${{ steps.filter.outputs.workflows }}
       docs: ${{ steps.filter.outputs.docs }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
         id: filter
         with:
@@ -30,18 +32,14 @@ jobs:
             docs:
               - '**.md'
 
-  select-runner:
-    uses: ./.github/workflows/select-runner.yml
-    secrets: inherit
-
   compose-validate:
-    needs: [changes, select-runner]
+    needs: changes
     if: ${{ needs.changes.outputs.stacks == 'true' }}
-    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    runs-on: ["self-hosted", "wsl-docker-runner"]
     container:
       image: docker:cli
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
 
       - name: Validate compose files
         run: |
@@ -53,38 +51,32 @@ jobs:
           exit "$failed"
 
   hadolint:
-    needs: [changes, select-runner]
+    needs: changes
     if: ${{ needs.changes.outputs.stacks == 'true' }}
-    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    runs-on: ["self-hosted", "wsl-docker-runner"]
+    container:
+      image: hadolint/hadolint:latest-alpine
     steps:
-      - uses: actions/checkout@v5
-
-      - name: Check for Dockerfiles
-        id: dockerfiles
-        run: |
-          if find stacks -name 'Dockerfile' | grep -q .; then
-            echo "found=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "found=false" >> "$GITHUB_OUTPUT"
-          fi
+      - uses: actions/checkout@v4
 
       - name: Lint Dockerfiles
-        if: steps.dockerfiles.outputs.found == 'true'
-        uses: hadolint/hadolint-action@v3.1.0
-        with:
-          recursive: true
+        run: |
+          files=$(find stacks -name 'Dockerfile' | sort)
+          if [ -z "$files" ]; then
+            echo "No Dockerfiles found — skipping"
+            exit 0
+          fi
+          # shellcheck disable=SC2086
+          hadolint $files
 
   actionlint:
     needs: changes
     if: ${{ needs.changes.outputs.workflows == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ["self-hosted", "wsl-docker-runner"]
+    container:
+      image: rhysd/actionlint:latest-sc
     steps:
-      - uses: actions/checkout@v5
-
-      - name: Install actionlint
-        run: |
-          curl -sL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash | bash
-          sudo mv actionlint /usr/local/bin/
+      - uses: actions/checkout@v4
 
       - name: Run actionlint
         run: actionlint
@@ -92,9 +84,23 @@ jobs:
   vale:
     needs: changes
     if: ${{ needs.changes.outputs.docs == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ["self-hosted", "wsl-docker-runner"]
+    container:
+      image: alpine:latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: apk add --no-cache github-cli curl
+
+      - name: Install vale
+        run: |
+          VERSION=$(curl -s https://api.github.com/repos/jdkato/vale/releases/latest \
+            | grep '"tag_name"' | cut -d'"' -f4)
+          curl -sL \
+            "https://github.com/jdkato/vale/releases/download/${VERSION}/vale_${VERSION#v}_Linux_64-bit.tar.gz" \
+            | tar xz -C /tmp
+          mv /tmp/vale /usr/local/bin/vale
 
       - name: Fetch shared vale config
         env:
@@ -103,22 +109,51 @@ jobs:
           gh api repos/blouin-labs/.github/contents/.vale.ini \
             --jq '.content' | base64 -d > .vale.ini
 
-      - uses: vale-cli/vale-action@v2.1.1
-        with:
-          files: "."
-          reporter: github-check
-          fail_on_error: true
+      - name: Run vale
+        run: vale --config=.vale.ini .
+
+  gitleaks:
+    runs-on: ["self-hosted", "wsl-docker-runner"]
+    container:
+      image: zricethezav/gitleaks:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan for secrets
+        # --no-git: scan working directory files directly (no history walk needed for PRs)
+        # --redact: mask secret values in output
+        run: gitleaks detect --source . --no-git --redact --exit-code 1
+
+  checkov:
+    needs: changes
+    if: ${{ needs.changes.outputs.stacks == 'true' }}
+    runs-on: ["self-hosted", "wsl-docker-runner"]
+    container:
+      image: bridgecrew/checkov:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan compose files for security misconfigurations
+        # soft-fail: harden to hard-fail once baseline is clean
+        run: checkov -d stacks --framework docker_compose --compact --quiet || true
 
   all-checks:
-    needs: [compose-validate, hadolint, actionlint, vale]
+    needs: [compose-validate, hadolint, actionlint, vale, gitleaks, checkov]
     if: ${{ always() }}
-    runs-on: ubuntu-latest
+    runs-on: ["self-hosted", "wsl-docker-runner"]
+    container:
+      image: alpine:latest
     steps:
       - name: All checks passed
         run: |
-          if [ "${{ needs.compose-validate.result }}" = "failure" ] \
-            || [ "${{ needs.hadolint.result }}" = "failure" ] \
-            || [ "${{ needs.actionlint.result }}" = "failure" ] \
-            || [ "${{ needs.vale.result }}" = "failure" ]; then
-            exit 1
-          fi
+          for result in \
+            "${{ needs.compose-validate.result }}" \
+            "${{ needs.hadolint.result }}" \
+            "${{ needs.actionlint.result }}" \
+            "${{ needs.vale.result }}" \
+            "${{ needs.gitleaks.result }}" \
+            "${{ needs.checkov.result }}"; do
+            if [ "$result" = "failure" ]; then
+              exit 1
+            fi
+          done

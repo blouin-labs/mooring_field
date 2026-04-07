@@ -24,9 +24,23 @@ permissions:
 
 jobs:
   promote:
-    runs-on: ubuntu-latest
+    runs-on: ["self-hosted", "wsl-docker-runner"]
     if: ${{ inputs.action == 'promote' || inputs.action == 'promote-and-deploy' }}
+    container:
+      image: alpine:latest
     steps:
+      - name: Install dependencies
+        run: apk add --no-cache git github-cli curl
+
+      - name: Install crane
+        run: |
+          CRANE_VERSION=$(curl -s https://api.github.com/repos/google/go-containerregistry/releases/latest \
+            | grep '"tag_name"' | cut -d'"' -f4)
+          curl -sL \
+            "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz" \
+            | tar xz -C /tmp crane
+          mv /tmp/crane /usr/local/bin/crane
+
       - name: Require confirmation for promote-and-deploy
         if: ${{ inputs.action == 'promote-and-deploy' }}
         run: |
@@ -60,43 +74,39 @@ jobs:
             --field force=false
           echo "main fast-forwarded to $SHA"
 
-      - name: Log in to ghcr.io
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
         with:
           ref: staging
 
       - name: Re-tag all services :staging → :latest
         # No-op if no stacks have a Dockerfile; runs automatically when they do.
+        # Uses crane for registry-to-registry re-tag (no Docker daemon required).
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          crane auth login ghcr.io \
+            -u "${{ github.actor }}" -p "$GITHUB_TOKEN"
           find stacks/ -maxdepth 2 -name 'Dockerfile' \
             | sed 's|stacks/||; s|/Dockerfile||' \
             | while read -r service; do
                 echo "Re-tagging $service"
-                docker pull "ghcr.io/blouin-labs/${service}:staging"
-                docker tag  "ghcr.io/blouin-labs/${service}:staging" \
-                            "ghcr.io/blouin-labs/${service}:latest"
-                docker push "ghcr.io/blouin-labs/${service}:latest"
+                crane tag "ghcr.io/blouin-labs/${service}:staging" latest
               done
 
-  runner:
-    uses: ./.github/workflows/select-runner.yml
-
   deploy:
-    runs-on: ${{ fromJson(needs.runner.outputs.runner) }}
-    needs: [promote, runner]
+    runs-on: ["self-hosted", "wsl-docker-runner"]
+    needs: promote
     # Runs for promote-and-deploy (after promote succeeds) and deploy (promote skipped).
     if: |
       always() &&
       (inputs.action == 'promote-and-deploy' || inputs.action == 'deploy') &&
-      (needs.promote.result == 'success' || needs.promote.result == 'skipped') &&
-      needs.runner.result == 'success'
+      (needs.promote.result == 'success' || needs.promote.result == 'skipped')
+    container:
+      image: alpine:latest
     steps:
+      - name: Install dependencies
+        run: apk add --no-cache git openssh-client rsync
+
       - name: Require confirmation
         run: |
           if [ "${{ inputs.confirm }}" != "ok deploy" ]; then
@@ -104,7 +114,7 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
         with:
           ref: staging
 
@@ -119,6 +129,7 @@ jobs:
       - name: Rsync stacks to server
         # No --delete: files are only added/updated, never removed. Persistent data
         # directories (data/, keys/, db/) and .env files stay on the server untouched.
+        # Removing a stack folder from the repo leaves all server-side files intact.
         run: |
           rsync -av \
             --exclude='data/' \
@@ -130,8 +141,7 @@ jobs:
 
       - name: Start/update stacks
         run: |
-          cat > /tmp/deploy.sh << 'EOF'
-          #!/usr/bin/env bash
+          ssh compose-deploy@harbor-srv bash -s << 'EOF'
           set -eo pipefail
           find /mnt/synology/harbor_srv/docker -maxdepth 2 \
             \( -name 'compose.yaml' -o -name 'docker-compose.yml' \) \
@@ -142,4 +152,3 @@ jobs:
               docker compose -f "$compose_file" up -d
           done
           EOF
-          ssh compose-deploy@harbor-srv bash -s < /tmp/deploy.sh
