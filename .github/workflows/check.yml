@@ -161,7 +161,6 @@ jobs:
           kics scan -p stacks/ \
             -q /app/bin/assets/queries \
             --no-progress \
-            --report-formats console \
             --ignore-on-exit results
 
   all-checks:
