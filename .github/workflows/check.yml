@@ -58,6 +58,7 @@ jobs:
       image: hadolint/hadolint:latest-alpine
       options: --user root
     steps:
+      - run: apk add --no-cache git
       - uses: actions/checkout@v4
 
       - name: Lint Dockerfiles
@@ -78,6 +79,7 @@ jobs:
       image: rhysd/actionlint:latest
       options: --user root
     steps:
+      - run: apk add --no-cache git
       - uses: actions/checkout@v4
 
       - name: Run actionlint
