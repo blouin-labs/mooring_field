@@ -58,7 +58,7 @@ jobs:
     runs-on: [self-hosted, harbor-srv-docker]
     container: alpine:latest
     env:
-      SSH_OPTS: -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes
+      SSH_OPTS: -i /root/.ssh/id_ed25519 -o StrictHostKeyChecking=yes
     if: >-
       always() &&
       needs.preflight.result != 'failure' &&
@@ -79,10 +79,10 @@ jobs:
           GH_COMPOSE_SSH_KEY: ${{ secrets.GH_COMPOSE_SSH_KEY }}
           HARBOR_SRV_KNOWN_HOSTS: ${{ secrets.HARBOR_SRV_KNOWN_HOSTS }}
         run: |
-          install -d -m700 ~/.ssh
-          printf '%s\n' "$GH_COMPOSE_SSH_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          printf '%s\n' "$HARBOR_SRV_KNOWN_HOSTS" >> ~/.ssh/known_hosts
+          install -d -m700 /root/.ssh
+          printf '%s\n' "$GH_COMPOSE_SSH_KEY" > /root/.ssh/id_ed25519
+          chmod 600 /root/.ssh/id_ed25519
+          printf '%s\n' "$HARBOR_SRV_KNOWN_HOSTS" >> /root/.ssh/known_hosts
 
       - uses: actions/checkout@v4
         with:
