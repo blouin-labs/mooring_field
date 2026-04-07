@@ -1,0 +1,179 @@
+---
+name: Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Action to perform
+        required: true
+        type: choice
+        default: promote-and-deploy
+        options:
+          - promote-and-deploy
+          - promote
+          - deploy
+      confirm:
+        description: 'For promote-and-deploy or deploy: type "ok deploy" to confirm'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    if: ${{ inputs.action == 'promote' || inputs.action == 'promote-and-deploy' }}
+    steps:
+      - name: Check staging is ahead of main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          STAGING=$(gh api "repos/${{ github.repository }}/git/refs/heads/staging" \
+            --jq '.object.sha')
+          MAIN=$(gh api "repos/${{ github.repository }}/git/refs/heads/main" \
+            --jq '.object.sha')
+          if [ "$STAGING" = "$MAIN" ]; then
+            echo "ERROR: staging is not ahead of main — nothing to promote" >&2
+            exit 1
+          fi
+
+      - name: Check staging build is green
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RUN_ID=$(gh api \
+            "repos/${{ github.repository }}/actions/workflows/build.yml/runs?branch=staging&status=success&per_page=1" \
+            --jq '.workflow_runs[0].id')
+          if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
+            echo "ERROR: no successful build.yml run found on staging" >&2
+            exit 1
+          fi
+          echo "Latest successful staging build: run $RUN_ID"
+
+  deploy:
+    needs: [preflight]
+    runs-on: [self-hosted, harbor-srv-docker]
+    container: alpine:latest
+    env:
+      SSH_OPTS: -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes
+    if: >-
+      always() &&
+      needs.preflight.result != 'failure' &&
+      (inputs.action == 'promote-and-deploy' || inputs.action == 'deploy')
+    steps:
+      - name: Install dependencies
+        run: apk add --no-cache git openssh-client rsync
+
+      - name: Require confirmation
+        run: |
+          if [ "${{ inputs.confirm }}" != "ok deploy" ]; then
+            echo 'ERROR: type "ok deploy" in the confirm field to proceed' >&2
+            exit 1
+          fi
+
+      - name: Set up SSH
+        env:
+          GH_COMPOSE_SSH_KEY: ${{ secrets.GH_COMPOSE_SSH_KEY }}
+          HARBOR_SRV_KNOWN_HOSTS: ${{ secrets.HARBOR_SRV_KNOWN_HOSTS }}
+        run: |
+          install -d -m700 ~/.ssh
+          printf '%s\n' "$GH_COMPOSE_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$HARBOR_SRV_KNOWN_HOSTS" >> ~/.ssh/known_hosts
+
+      - uses: actions/checkout@v4
+        with:
+          ref: staging
+
+      - name: Inject secrets into .env files
+        env:
+          TECHNITIUM_ADMIN_PASSWORD: ${{ secrets.TECHNITIUM_ADMIN_PASSWORD }}
+          OPENVPN_USER: ${{ secrets.OPENVPN_USER }}
+          OPENVPN_PASSWORD: ${{ secrets.OPENVPN_PASSWORD }}
+        run: |
+          find stacks -name '.env' | while IFS= read -r f; do
+            awk '{
+              while (match($0, /%[A-Z0-9_]+%/)) {
+                v = substr($0, RSTART+1, RLENGTH-2)
+                $0 = substr($0, 1, RSTART-1) ENVIRON[v] substr($0, RSTART+RLENGTH)
+              }
+              print
+            }' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+          done
+
+      - name: Rsync stacks to server
+        # No --delete: files are only added/updated, never removed. Persistent data
+        # directories (data/, keys/, db/) stay on the server untouched.
+        run: |
+          # shellcheck disable=SC2086
+          rsync -av -e "ssh $SSH_OPTS" \
+            --exclude='data/' \
+            --exclude='keys/' \
+            --exclude='db/' \
+            --exclude='*.db' \
+            stacks/ compose-deploy@192.168.1.5:/mnt/synology/harbor_srv/docker/
+
+      - name: Start/update stacks
+        run: |
+          # shellcheck disable=SC2086
+          ssh $SSH_OPTS compose-deploy@192.168.1.5 bash -s << 'EOF'
+          set -eo pipefail
+          find /mnt/synology/harbor_srv/docker -maxdepth 2 \
+            \( -name 'compose.yaml' -o -name 'docker-compose.yml' \) \
+            | sort \
+            | while IFS= read -r compose_file; do
+              echo ":: $compose_file"
+              docker compose -f "$compose_file" pull --quiet || true
+              docker compose -f "$compose_file" up -d
+          done
+          EOF
+
+  promote:
+    needs: [preflight, deploy]
+    runs-on: self-hosted
+    container:
+      image: docker:cli
+      options: -v /var/run/docker.sock:/var/run/docker.sock
+    if: >-
+      always() &&
+      needs.preflight.result == 'success' && (
+        inputs.action == 'promote' ||
+        (inputs.action == 'promote-and-deploy' && needs.deploy.result == 'success')
+      )
+    steps:
+      - name: Install dependencies
+        run: apk add --no-cache git github-cli
+
+      - name: Fast-forward main to staging
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHA=$(gh api "repos/${{ github.repository }}/git/refs/heads/staging" \
+            --jq '.object.sha')
+          gh api "repos/${{ github.repository }}/git/refs/heads/main" \
+            --method PATCH \
+            --field sha="$SHA" \
+            --field force=false
+          echo "main fast-forwarded to $SHA"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: staging
+
+      - name: Re-tag all services :staging → :latest
+        # No-op if no stacks have a Dockerfile; runs automatically when they do.
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          find stacks/ -maxdepth 2 -name 'Dockerfile' \
+            | sed 's|stacks/||; s|/Dockerfile||' \
+            | while read -r service; do
+                echo "Re-tagging $service"
+                docker pull "ghcr.io/blouin-labs/${service}:staging"
+                docker tag  "ghcr.io/blouin-labs/${service}:staging" \
+                            "ghcr.io/blouin-labs/${service}:latest"
+                docker push "ghcr.io/blouin-labs/${service}:latest"
+              done
