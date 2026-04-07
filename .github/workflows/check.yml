@@ -115,14 +115,14 @@ jobs:
   gitleaks:
     runs-on: self-hosted
     container:
-      image: zricethezav/gitleaks:latest
+      image: ghcr.io/gitleaks/gitleaks:latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Scan for secrets
-        # --no-git: scan working directory files directly (no history walk needed for PRs)
+        # dir: scan working directory files (no git history walk needed for PRs)
         # --redact: mask secret values in output
-        run: gitleaks detect --source . --no-git --redact --exit-code 1
+        run: gitleaks dir --source . --redact --exit-code 1
 
   checkov:
     needs: changes
@@ -135,7 +135,7 @@ jobs:
 
       - name: Scan compose files for security misconfigurations
         # soft-fail: harden to hard-fail once baseline is clean
-        run: checkov -d stacks --framework docker_compose --compact --quiet || true
+        run: checkov -d stacks --framework docker_compose --compact --quiet --soft-fail
 
   trivy:
     needs: changes
@@ -148,7 +148,8 @@ jobs:
 
       - name: Scan compose files for misconfigurations
         # soft-fail: harden to hard-fail once baseline is clean
-        run: trivy config --exit-code 0 stacks/
+        # --cache-dir: avoid writing to /root/.cache which may not be writable
+        run: trivy config --exit-code 0 --cache-dir /tmp/trivy-cache stacks/
 
   kics:
     needs: changes
@@ -161,11 +162,12 @@ jobs:
 
       - name: Scan stacks for misconfigurations
         # soft-fail: harden to hard-fail once baseline is clean
+        # --ignore-on-exit results: kics-native soft-fail; exit 0 regardless of findings
         run: |
           kics scan -p stacks/ \
             --no-progress \
             --report-formats console \
-            --ignore-on-exit results || true
+            --ignore-on-exit results
 
   all-checks:
     needs: [compose-validate, hadolint, actionlint, vale, gitleaks, checkov, trivy, kics]
