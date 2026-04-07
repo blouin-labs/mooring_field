@@ -34,19 +34,13 @@ jobs:
     if: ${{ needs.discover.outputs.matrix != '[]' }}
     runs-on: self-hosted
     container:
-      image: docker:dind
-      options: --privileged
-      env:
-        DOCKER_TLS_CERTDIR: ""
+      image: docker:cli
+      options: -v /var/run/docker.sock:/var/run/docker.sock
     strategy:
       matrix:
         service: ${{ fromJSON(needs.discover.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Wait for Docker daemon
-        run: |
-          until docker info >/dev/null 2>&1; do sleep 1; done
 
       - name: Log in to ghcr.io
         run: |

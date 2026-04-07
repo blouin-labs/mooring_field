@@ -137,8 +137,38 @@ jobs:
         # soft-fail: harden to hard-fail once baseline is clean
         run: checkov -d stacks --framework docker_compose --compact --quiet || true
 
+  trivy:
+    needs: changes
+    if: ${{ needs.changes.outputs.stacks == 'true' }}
+    runs-on: self-hosted
+    container:
+      image: aquasec/trivy:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan compose files for misconfigurations
+        # soft-fail: harden to hard-fail once baseline is clean
+        run: trivy config --exit-code 0 stacks/
+
+  kics:
+    needs: changes
+    if: ${{ needs.changes.outputs.stacks == 'true' }}
+    runs-on: self-hosted
+    container:
+      image: checkmarx/kics:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan stacks for misconfigurations
+        # soft-fail: harden to hard-fail once baseline is clean
+        run: |
+          kics scan -p stacks/ \
+            --no-progress \
+            --report-formats console \
+            --ignore-on-exit results || true
+
   all-checks:
-    needs: [compose-validate, hadolint, actionlint, vale, gitleaks, checkov]
+    needs: [compose-validate, hadolint, actionlint, vale, gitleaks, checkov, trivy, kics]
     if: ${{ always() }}
     runs-on: self-hosted
     container:
@@ -152,7 +182,9 @@ jobs:
             "${{ needs.actionlint.result }}" \
             "${{ needs.vale.result }}" \
             "${{ needs.gitleaks.result }}" \
-            "${{ needs.checkov.result }}"; do
+            "${{ needs.checkov.result }}" \
+            "${{ needs.trivy.result }}" \
+            "${{ needs.kics.result }}"; do
             if [ "$result" = "failure" ]; then
               exit 1
             fi
