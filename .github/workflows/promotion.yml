@@ -27,19 +27,11 @@ jobs:
     runs-on: self-hosted
     if: ${{ inputs.action == 'promote' || inputs.action == 'promote-and-deploy' }}
     container:
-      image: alpine:latest
+      image: docker:cli
+      options: -v /var/run/docker.sock:/var/run/docker.sock
     steps:
       - name: Install dependencies
-        run: apk add --no-cache git github-cli curl
-
-      - name: Install crane
-        run: |
-          CRANE_VERSION=$(curl -s https://api.github.com/repos/google/go-containerregistry/releases/latest \
-            | grep '"tag_name"' | cut -d'"' -f4)
-          curl -sL \
-            "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz" \
-            | tar xz -C /tmp crane
-          mv /tmp/crane /usr/local/bin/crane
+        run: apk add --no-cache git github-cli
 
       - name: Require confirmation for promote-and-deploy
         if: ${{ inputs.action == 'promote-and-deploy' }}
@@ -80,17 +72,17 @@ jobs:
 
       - name: Re-tag all services :staging → :latest
         # No-op if no stacks have a Dockerfile; runs automatically when they do.
-        # Uses crane for registry-to-registry re-tag (no Docker daemon required).
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          crane auth login ghcr.io \
-            -u "${{ github.actor }}" -p "$GITHUB_TOKEN"
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
           find stacks/ -maxdepth 2 -name 'Dockerfile' \
             | sed 's|stacks/||; s|/Dockerfile||' \
             | while read -r service; do
                 echo "Re-tagging $service"
-                crane tag "ghcr.io/blouin-labs/${service}:staging" latest
+                docker pull "ghcr.io/blouin-labs/${service}:staging"
+                docker tag  "ghcr.io/blouin-labs/${service}:staging" \
+                            "ghcr.io/blouin-labs/${service}:latest"
+                docker push "ghcr.io/blouin-labs/${service}:latest"
               done
 
   deploy:
