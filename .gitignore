@@ -1,7 +1,3 @@
-# Secret environment files — commit .env.example, not .env
-.env
-**/.env
-
 # Runtime data directories — managed on server, never committed
 stacks/**/data/
 stacks/**/keys/

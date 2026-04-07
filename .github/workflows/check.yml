@@ -148,9 +148,10 @@ jobs:
     if: ${{ needs.changes.outputs.stacks == 'true' }}
     runs-on: self-hosted
     container:
-      image: checkmarx/kics:latest
+      image: checkmarx/kics:debian
       options: --user root
     steps:
+      - run: apt-get update -qq && apt-get install -y --no-install-recommends git
       - uses: actions/checkout@v4
 
       - name: Scan stacks for misconfigurations

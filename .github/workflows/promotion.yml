@@ -110,6 +110,22 @@ jobs:
         with:
           ref: staging
 
+      - name: Inject secrets into .env files
+        env:
+          TECHNITIUM_ADMIN_PASSWORD: ${{ secrets.TECHNITIUM_ADMIN_PASSWORD }}
+          OPENVPN_USER: ${{ secrets.OPENVPN_USER }}
+          OPENVPN_PASSWORD: ${{ secrets.OPENVPN_PASSWORD }}
+        run: |
+          find stacks -name '.env' | while IFS= read -r f; do
+            awk '{
+              while (match($0, /%[A-Z0-9_]+%/)) {
+                v = substr($0, RSTART+1, RLENGTH-2)
+                $0 = substr($0, 1, RSTART-1) ENVIRON[v] substr($0, RSTART+RLENGTH)
+              }
+              print
+            }' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+          done
+
       - name: Set up SSH
         run: |
           mkdir -p ~/.ssh
@@ -120,7 +136,7 @@ jobs:
 
       - name: Rsync stacks to server
         # No --delete: files are only added/updated, never removed. Persistent data
-        # directories (data/, keys/, db/) and .env files stay on the server untouched.
+        # directories (data/, keys/, db/) stay on the server untouched.
         # Removing a stack folder from the repo leaves all server-side files intact.
         run: |
           rsync -av \
@@ -128,7 +144,6 @@ jobs:
             --exclude='keys/' \
             --exclude='db/' \
             --exclude='*.db' \
-            --exclude='.env' \
             stacks/ compose-deploy@harbor-srv:/mnt/synology/harbor_srv/docker/
 
       - name: Start/update stacks
