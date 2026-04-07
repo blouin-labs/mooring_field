@@ -141,7 +141,7 @@ jobs:
 
       - name: Scan compose files for security misconfigurations
         # soft-fail: harden to hard-fail once baseline is clean
-        run: checkov -d stacks --framework docker_compose --compact --quiet --soft-fail
+        run: checkov -d stacks --compact --quiet --soft-fail
 
   kics:
     needs: changes
@@ -159,6 +159,7 @@ jobs:
         # --ignore-on-exit results: kics-native soft-fail; exit 0 regardless of findings
         run: |
           kics scan -p stacks/ \
+            -q /app/bin/assets/queries \
             --no-progress \
             --report-formats console \
             --ignore-on-exit results
