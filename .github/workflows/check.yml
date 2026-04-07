@@ -74,7 +74,7 @@ jobs:
     if: ${{ needs.changes.outputs.workflows == 'true' }}
     runs-on: self-hosted
     container:
-      image: rhysd/actionlint:latest-sc
+      image: rhysd/actionlint:latest
     steps:
       - uses: actions/checkout@v4
 
@@ -142,7 +142,7 @@ jobs:
     if: ${{ needs.changes.outputs.stacks == 'true' }}
     runs-on: self-hosted
     container:
-      image: aquasec/trivy:latest
+      image: aquasec/trivy:0.69.3
     steps:
       - uses: actions/checkout@v4
 
