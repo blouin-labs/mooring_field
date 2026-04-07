@@ -24,7 +24,7 @@ permissions:
 
 jobs:
   promote:
-    runs-on: ["self-hosted", "wsl-docker-runner"]
+    runs-on: self-hosted
     if: ${{ inputs.action == 'promote' || inputs.action == 'promote-and-deploy' }}
     container:
       image: alpine:latest
@@ -94,7 +94,7 @@ jobs:
               done
 
   deploy:
-    runs-on: ["self-hosted", "wsl-docker-runner"]
+    runs-on: self-hosted
     needs: promote
     # Runs for promote-and-deploy (after promote succeeds) and deploy (promote skipped).
     if: |

@@ -12,7 +12,7 @@ on:
 
 jobs:
   changes:
-    runs-on: ["self-hosted", "wsl-docker-runner"]
+    runs-on: self-hosted
     container:
       image: alpine/git
     outputs:
@@ -35,7 +35,7 @@ jobs:
   compose-validate:
     needs: changes
     if: ${{ needs.changes.outputs.stacks == 'true' }}
-    runs-on: ["self-hosted", "wsl-docker-runner"]
+    runs-on: self-hosted
     container:
       image: docker:cli
     steps:
@@ -53,7 +53,7 @@ jobs:
   hadolint:
     needs: changes
     if: ${{ needs.changes.outputs.stacks == 'true' }}
-    runs-on: ["self-hosted", "wsl-docker-runner"]
+    runs-on: self-hosted
     container:
       image: hadolint/hadolint:latest-alpine
     steps:
@@ -72,7 +72,7 @@ jobs:
   actionlint:
     needs: changes
     if: ${{ needs.changes.outputs.workflows == 'true' }}
-    runs-on: ["self-hosted", "wsl-docker-runner"]
+    runs-on: self-hosted
     container:
       image: rhysd/actionlint:latest-sc
     steps:
@@ -84,7 +84,7 @@ jobs:
   vale:
     needs: changes
     if: ${{ needs.changes.outputs.docs == 'true' }}
-    runs-on: ["self-hosted", "wsl-docker-runner"]
+    runs-on: self-hosted
     container:
       image: alpine:latest
     steps:
@@ -113,7 +113,7 @@ jobs:
         run: vale --config=.vale.ini .
 
   gitleaks:
-    runs-on: ["self-hosted", "wsl-docker-runner"]
+    runs-on: self-hosted
     container:
       image: zricethezav/gitleaks:latest
     steps:
@@ -127,7 +127,7 @@ jobs:
   checkov:
     needs: changes
     if: ${{ needs.changes.outputs.stacks == 'true' }}
-    runs-on: ["self-hosted", "wsl-docker-runner"]
+    runs-on: self-hosted
     container:
       image: bridgecrew/checkov:latest
     steps:
@@ -140,7 +140,7 @@ jobs:
   all-checks:
     needs: [compose-validate, hadolint, actionlint, vale, gitleaks, checkov]
     if: ${{ always() }}
-    runs-on: ["self-hosted", "wsl-docker-runner"]
+    runs-on: self-hosted
     container:
       image: alpine:latest
     steps:

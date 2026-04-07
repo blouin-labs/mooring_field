@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   discover:
-    runs-on: ["self-hosted", "wsl-docker-runner"]
+    runs-on: self-hosted
     container:
       image: alpine/git
     outputs:
@@ -32,7 +32,7 @@ jobs:
   build:
     needs: discover
     if: ${{ needs.discover.outputs.matrix != '[]' }}
-    runs-on: ["self-hosted", "wsl-docker-runner"]
+    runs-on: self-hosted
     container:
       image: docker:dind
       options: --privileged
