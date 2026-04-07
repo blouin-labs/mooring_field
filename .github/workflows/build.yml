@@ -19,6 +19,7 @@ jobs:
     outputs:
       matrix: ${{ steps.scan.outputs.matrix }}
     steps:
+      - run: apk add --no-cache jq
       - uses: actions/checkout@v4
 
       - name: Discover services with Dockerfiles
@@ -40,6 +41,7 @@ jobs:
       matrix:
         service: ${{ fromJSON(needs.discover.outputs.matrix) }}
     steps:
+      - run: apk add --no-cache git
       - uses: actions/checkout@v4
 
       - name: Log in to ghcr.io
