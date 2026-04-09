@@ -111,6 +111,7 @@ jobs:
           # shellcheck disable=SC2086
           rsync -avvv -e "ssh $SSH_OPTS" \
             --rsync-path="sudo rsync" \
+            --no-owner --no-group \
             --exclude='data/' \
             --exclude='keys/' \
             --exclude='db/' \
