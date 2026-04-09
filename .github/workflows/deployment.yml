@@ -110,6 +110,7 @@ jobs:
         run: |
           # shellcheck disable=SC2086
           rsync -avvv -e "ssh $SSH_OPTS" \
+            --rsync-path="sudo rsync" \
             --exclude='data/' \
             --exclude='keys/' \
             --exclude='db/' \
