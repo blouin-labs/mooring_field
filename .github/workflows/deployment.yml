@@ -121,17 +121,7 @@ jobs:
       - name: Start/update stacks
         run: |
           # shellcheck disable=SC2086
-          ssh $SSH_OPTS compose-deploy@192.168.1.5 bash -s << 'EOF'
-          set -eo pipefail
-          find /mnt/synology/harbor_srv/docker -maxdepth 2 \
-            \( -name 'compose.yaml' -o -name 'docker-compose.yml' \) \
-            | sort \
-            | while IFS= read -r compose_file; do
-              echo ":: $compose_file"
-              docker compose -f "$compose_file" pull --quiet || true
-              docker compose -f "$compose_file" up -d
-          done
-          EOF
+          ssh $SSH_OPTS compose-deploy@192.168.1.5 sudo /usr/local/bin/harbor-compose-update.sh
 
   promote:
     needs: [preflight, deploy]
