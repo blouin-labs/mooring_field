@@ -3,6 +3,7 @@ services:
     image: ghcr.io/blouin-labs/claude-rc:latest
     container_name: claude-rc
     restart: unless-stopped
+    tty: true
     volumes:
       - /mnt/synology/harbor_srv/docker/claude-rc/auth:/root
       - /mnt/synology/harbor_srv/docker/claude-rc/workspace:/workspace
