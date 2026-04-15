@@ -4,13 +4,10 @@ services:
     container_name: claude-rc
     restart: unless-stopped
     volumes:
-      - claude-rc-auth:/root
+      - /mnt/synology/harbor_srv/docker/claude-rc/auth:/root
       - /mnt/synology/harbor_srv/docker/claude-rc/workspace:/workspace
     healthcheck:
       test: ["CMD-SHELL", "pgrep -f 'claude remote-control' || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-
-volumes:
-  claude-rc-auth:
