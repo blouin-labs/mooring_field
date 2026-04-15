@@ -93,7 +93,6 @@ jobs:
           TECHNITIUM_ADMIN_PASSWORD: ${{ secrets.TECHNITIUM_ADMIN_PASSWORD }}
           OPENVPN_USER: ${{ secrets.OPENVPN_USER }}
           OPENVPN_PASSWORD: ${{ secrets.OPENVPN_PASSWORD }}
-          CLAUDE_SESSION_TOKEN: ${{ secrets.CLAUDE_SESSION_TOKEN }}
         run: |
           find stacks -name '.env' | while IFS= read -r f; do
             awk '{
