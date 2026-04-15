@@ -11,6 +11,8 @@ services:
       - /mnt/synology/harbor_srv/docker/claude-devcontainer/workspace:/workspace
       - /mnt/synology/harbor_srv/docker/claude-devcontainer/claude-config:/home/node/.claude
       - /mnt/synology/harbor_srv/docker/claude-devcontainer/commandhistory:/commandhistory
+    ports:
+      - "7681:7681"
     environment:
       NODE_OPTIONS: --max-old-space-size=4096
       CLAUDE_CONFIG_DIR: /home/node/.claude
